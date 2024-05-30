@@ -62,28 +62,32 @@ def seed_db():
     # Actors Object
     actors = [
         Actor(
-            first_name ='Morgan',
-            last_name ='Freeman',
-            gender ='Male',
-            date_of_birth = '1 June 1937',
+            first_name='Morgan',
+            last_name='Freeman',
+            gender='Male',
+            country='USA',
+            date_of_birth='1 June 1937',
             
         ),
         Actor(
             first_name ='Anthony',
             last_name ='Hopkins',
             gender ='Male',
+            country='UK',            
             date_of_birth = '31 December 1937',
         ),
         Actor(
             first_name ='Nathan',
             last_name ='Fillion',
             gender ='Male',
+            country='Canada',            
             date_of_birth = '27 March 1971'
         ),
         Actor(
             first_name ='Abigail',
             last_name ='Spencer',
             gender ='Female',
+            country='USA',            
             date_of_birth = '4 August 1971'
         ),
     ]
@@ -116,10 +120,20 @@ class Actor(db.Model):
     first_name = db.Column(db.String(100))
     last_name = db.Column(db.String(100))
     gender = db.Column(db.String(20))
+    country = db.Column(db.String(50))
     date_of_birth = db.Column(db.Text())
 
 
 # SCHEMAS AREA
+
+class movieSchema(ma.Schema):
+    class Meta:
+        fields = ('id', 'title', 'genre', 'length', 'release_year', 'rating')
+
+class actorSchema(ma.Schema):
+    class Meta:
+        fields = ('id', 'first_name', 'last_name', 'gender', 'country', 'date_of_birth')
+
 
 # ROUTING AREA
 
@@ -127,3 +141,15 @@ class Actor(db.Model):
 @app.route("/")
 def hello():
     return "Welcome to Ripe Tomatoes API"
+
+@app.route('/movies')
+def all_movies():
+    stmt = db.Select(Movie)
+    movies = db.session.scalars(stmt).all()
+    return movieSchema(many=True).dump(movies)
+
+@app.route('/actors')
+def all_actors():
+    stmt = db.Select(Actor)
+    actors = db.session.scalars(stmt).all()
+    return actorSchema(many=True).dump(actors)

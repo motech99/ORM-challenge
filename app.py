@@ -1,9 +1,10 @@
 from flask import Flask, jsonify, request, abort
 from flask_sqlalchemy import SQLAlchemy
-from datetime import date
+from datetime import timedelta
 from flask_marshmallow import Marshmallow
 from marshmallow.validate import Length
 from flask_bcrypt import Bcrypt
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 
 # pylint: disable=E1101
 
@@ -14,9 +15,13 @@ app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = (
     "postgresql+psycopg2://tomato:123456@localhost:5432/ripe_tomatoes_db"
 )
+app.config["JWT_SECRET_KEY"] = "Backend best end"
+
+
 db = SQLAlchemy(app)
 ma = Marshmallow(app)
 bcrypt = Bcrypt(app)
+jwt = JWTManager(app)
 
 
 # CLI COMMANDS AREA
@@ -190,12 +195,68 @@ def all_movies():
     return movieSchema(many=True).dump(movies)
 
 
+
+# delete Movie
+
+#add the id to let the server know the Movie we want to delete
+@app.route('/movies/<int:id>', methods=['DELETE'])
+@jwt_required()
+# includes the id parameter
+def movie_delete(id):
+    #get the user id invoking get_jwt_identity
+    user_id = get_jwt_identity()
+    # Find it in the db
+    stmt = db.select(User).filter_by(id=user_id)
+    user = db.session.scalar(stmt)
+    # Make sure it is in the database
+    if not user:
+        return abort(401, description="Invalid user")
+    # Stop the request if the user is not an admin
+    if not user.admin:
+        return abort(401, description="Unauthorised user")
+    # find the Movie
+    stmt = db.select(Movie).filter_by(id=id)
+    movie = db.session.scalar(stmt)
+    # return an error if the card doesn't exist
+    if not movie:
+        return abort(400, description="Movie doesn't exist")
+    # Delete the movie from the database and commit
+    db.session.delete(movie)
+    db.session.commit()
+    # return the card in the response
+    return jsonify(movieSchema().dump(movie))
+
+
+
 # Get all Actors
 @app.route("/actors")
 def all_actors():
     stmt = db.Select(Actor)
     actors = db.session.scalars(stmt).all()
     return actorSchema(many=True).dump(actors)
+
+
+# DELETE ACTOR
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # User Signup
 @app.route("/auth/signup", methods=["POST"])
@@ -214,14 +275,37 @@ def auth_register():
     #Add the email attribute
     user.email = user_fields["email"]
     # Add the password attribute hashed by bcrypt
-    user.password = bcrypt.generate_password_hash(user_fields["password"]).decode(
-        "utf-8"
-    )
+    user.password = bcrypt.generate_password_hash(user_fields["password"]).decode("utf-8")
+    # Set the admin attribute to false
+    user.admin = False
     # Add it to the database and commit the changes
     db.session.add(user)
     db.session.commit()
+    # Create a variable that sets an expiry date
+    expiry = timedelta(days=1)
+    # create the access token
+    access_token = create_access_token(identity=str(user.id), expires_delta=expiry)
     # Return the user to check the request was successful
-    return jsonify(user_schema.dump(user))
+    return jsonify({"user": user.email, "token": access_token })
+
+# User Login
+@app.route('/auth/login', methods=['POST'])
+def auth_login():
+    # Get the user data from the request
+    user_fields = user_schema.load(request.json)
+    # find the user by email address
+    stmt = db.select(User).filter_by(email=request.json['email'])
+    user = db.session.scalar(stmt)
+    # there is not a user with that email or if the password is no correct send an error
+    if not user or not bcrypt.check_password_hash(user.password, user_fields['password']):
+        return abort(401, description='Incorrect username and password') 
+    
+    # Create a variable that sets an expiry date
+    expiry = timedelta(days=1)
+    # Create the access token
+    access_token = create_access_token(identity=str(user.id), expires_delta=expiry)
+    # return the user email and the access token
+    return jsonify({"user": user.email, "token": access_token})
 
 # Get All users
 @app.route("/users")

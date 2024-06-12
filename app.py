@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, abort
 from flask_sqlalchemy import SQLAlchemy
 from datetime import date
 from flask_marshmallow import Marshmallow
@@ -6,6 +6,7 @@ from marshmallow.validate import Length
 from flask_bcrypt import Bcrypt
 
 # pylint: disable=E1101
+
 app = Flask(__name__)
 
 
@@ -16,7 +17,6 @@ app.config["SQLALCHEMY_DATABASE_URI"] = (
 db = SQLAlchemy(app)
 ma = Marshmallow(app)
 bcrypt = Bcrypt(app)
-
 
 
 # CLI COMMANDS AREA
@@ -97,15 +97,15 @@ def seed_db():
     ]
     # Users Object
     users = [
-            User(
-            email = "admin",
-            password = bcrypt.generate_password_hash("password123").decode('utf-8'),
-            admin = True
-            ),
-            User(
-            email = "user1",
-            password = bcrypt.generate_password_hash("12345678").decode('utf-8')
-            ),
+        User(
+            email="admin@email.com",
+            password=bcrypt.generate_password_hash("password123").decode("utf-8"),
+            admin=True,
+        ),
+        User(
+            email="user1@email.com",
+            password=bcrypt.generate_password_hash("12345678").decode("utf-8"),
+        ),
     ]
 
     db.session.add_all(movies)
@@ -171,18 +171,18 @@ class userSchema(ma.Schema):
         # set the password's length to a minimum of 6 characters
         password = ma.String(validate=Length(min=8))
 
+
 user_schema = userSchema()
 users_schema = userSchema(many=True)
 
 
 # ROUTING AREA
 
-
 @app.route("/")
 def hello():
     return "Welcome to Ripe Tomatoes API"
 
-
+# Get all Movies
 @app.route("/movies")
 def all_movies():
     stmt = db.Select(Movie)
@@ -190,26 +190,43 @@ def all_movies():
     return movieSchema(many=True).dump(movies)
 
 
+# Get all Actors
 @app.route("/actors")
 def all_actors():
     stmt = db.Select(Actor)
     actors = db.session.scalars(stmt).all()
     return actorSchema(many=True).dump(actors)
 
-@app.route('/auth/signup', methods=["POST"])
+# User Signup
+@app.route("/auth/signup", methods=["POST"])
 def auth_register():
-    #The request data will be loaded in a user_schema converted to JSON. request needs to be imported from
+    # The request data will be loaded in a user_schema converted to JSON. request needs to be imported from
     user_fields = user_schema.load(request.json)
-    #Create the user object
+    # Find the email attribute
+    stmt = db.select(User).filter_by(email=request.json['email'])
+    user = db.session.scalar(stmt)
+    
+    if user:
+        # return an abor message to inform the user. That will end the request
+        return abort(400, description="Email already registered")
+    # Create the user object
     user = User()
     #Add the email attribute
-    user.email = user_fields['email']
-    #Add the password attribute hashed by bcrypt
-    user.password = bcrypt.generate_password_hash(user_fields['password']).decode('utf-8')
-    #Add it to the database and commit the changes
+    user.email = user_fields["email"]
+    # Add the password attribute hashed by bcrypt
+    user.password = bcrypt.generate_password_hash(user_fields["password"]).decode(
+        "utf-8"
+    )
+    # Add it to the database and commit the changes
     db.session.add(user)
     db.session.commit()
-    #Return the user to check the request was successful
+    # Return the user to check the request was successful
     return jsonify(user_schema.dump(user))
 
+# Get All users
+@app.route("/users")
+def all_users():
+    stmt = db.Select(User)
+    users = db.session.scalars(stmt).all()
+    return users_schema.dump(users)
 

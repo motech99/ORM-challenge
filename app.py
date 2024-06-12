@@ -1,8 +1,11 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from datetime import date
 from flask_marshmallow import Marshmallow
+from marshmallow.validate import Length
+from flask_bcrypt import Bcrypt
 
+# pylint: disable=E1101
 app = Flask(__name__)
 
 
@@ -12,6 +15,8 @@ app.config["SQLALCHEMY_DATABASE_URI"] = (
 )
 db = SQLAlchemy(app)
 ma = Marshmallow(app)
+bcrypt = Bcrypt(app)
+
 
 
 # CLI COMMANDS AREA
@@ -62,41 +67,54 @@ def seed_db():
     # Actors Object
     actors = [
         Actor(
-            first_name='Morgan',
-            last_name='Freeman',
-            gender='Male',
-            country='USA',
-            date_of_birth='1 June 1937',
-            
+            first_name="Morgan",
+            last_name="Freeman",
+            gender="Male",
+            country="USA",
+            date_of_birth="1 June 1937",
         ),
         Actor(
-            first_name ='Anthony',
-            last_name ='Hopkins',
-            gender ='Male',
-            country='UK',            
-            date_of_birth = '31 December 1937',
+            first_name="Anthony",
+            last_name="Hopkins",
+            gender="Male",
+            country="UK",
+            date_of_birth="31 December 1937",
         ),
         Actor(
-            first_name ='Nathan',
-            last_name ='Fillion',
-            gender ='Male',
-            country='Canada',            
-            date_of_birth = '27 March 1971'
+            first_name="Nathan",
+            last_name="Fillion",
+            gender="Male",
+            country="Canada",
+            date_of_birth="27 March 1971",
         ),
         Actor(
-            first_name ='Abigail',
-            last_name ='Spencer',
-            gender ='Female',
-            country='USA',            
-            date_of_birth = '4 August 1971'
+            first_name="Abigail",
+            last_name="Spencer",
+            gender="Female",
+            country="USA",
+            date_of_birth="4 August 1971",
         ),
+    ]
+    # Users Object
+    users = [
+            User(
+            email = "admin",
+            password = bcrypt.generate_password_hash("password123").decode('utf-8'),
+            admin = True
+            ),
+            User(
+            email = "user1",
+            password = bcrypt.generate_password_hash("12345678").decode('utf-8')
+            ),
     ]
 
     db.session.add_all(movies)
     db.session.add_all(actors)
+    db.session.add_all(users)
     db.session.commit()
-    print('Movies added')
-    print('Actors added')
+    print("Movies added")
+    print("Actors added")
+    print("users added")
 
 
 # MODELS AREA
@@ -124,15 +142,37 @@ class Actor(db.Model):
     date_of_birth = db.Column(db.Text())
 
 
+class User(db.Model):
+    __tablename__ = "users"
+
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(), nullable=False, unique=True)
+    password = db.Column(db.String(), nullable=False)
+    admin = db.Column(db.Boolean(), default=False)
+
+
 # SCHEMAS AREA
+
 
 class movieSchema(ma.Schema):
     class Meta:
-        fields = ('id', 'title', 'genre', 'length', 'release_year', 'rating')
+        fields = ("id", "title", "genre", "length", "release_year", "rating")
+
 
 class actorSchema(ma.Schema):
     class Meta:
-        fields = ('id', 'first_name', 'last_name', 'gender', 'country', 'date_of_birth')
+        fields = ("id", "first_name", "last_name", "gender", "country", "date_of_birth")
+
+
+class userSchema(ma.Schema):
+    class Meta:
+        model = User
+        fields = ("email", "password", "admin")
+        # set the password's length to a minimum of 6 characters
+        password = ma.String(validate=Length(min=8))
+
+user_schema = userSchema()
+users_schema = userSchema(many=True)
 
 
 # ROUTING AREA
@@ -142,14 +182,34 @@ class actorSchema(ma.Schema):
 def hello():
     return "Welcome to Ripe Tomatoes API"
 
-@app.route('/movies')
+
+@app.route("/movies")
 def all_movies():
     stmt = db.Select(Movie)
     movies = db.session.scalars(stmt).all()
     return movieSchema(many=True).dump(movies)
 
-@app.route('/actors')
+
+@app.route("/actors")
 def all_actors():
     stmt = db.Select(Actor)
     actors = db.session.scalars(stmt).all()
     return actorSchema(many=True).dump(actors)
+
+@app.route('/auth/signup', methods=["POST"])
+def auth_register():
+    #The request data will be loaded in a user_schema converted to JSON. request needs to be imported from
+    user_fields = user_schema.load(request.json)
+    #Create the user object
+    user = User()
+    #Add the email attribute
+    user.email = user_fields['email']
+    #Add the password attribute hashed by bcrypt
+    user.password = bcrypt.generate_password_hash(user_fields['password']).decode('utf-8')
+    #Add it to the database and commit the changes
+    db.session.add(user)
+    db.session.commit()
+    #Return the user to check the request was successful
+    return jsonify(user_schema.dump(user))
+
+
